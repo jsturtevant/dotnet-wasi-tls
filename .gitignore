@@ -1,0 +1,6 @@
+.gdb_history
+.packages
+bin
+obj
+.crates.toml
+.crates2.json

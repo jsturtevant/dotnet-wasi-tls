@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>csharp-wasm</RootNamespace>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <UseAppHost>false</UseAppHost>
+    <SelfContained>true</SelfContained>
+    <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
+    <PublishTrimmed>true</PublishTrimmed>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+  </PropertyGroup>
+  
+  <PropertyGroup>
+    <PublishTrimmed>true</PublishTrimmed>
+    <AssemblyName>csharp-wasm</AssemblyName>
+  </PropertyGroup>
+  
+  <ItemGroup>
+    <RdXmlFile Include="rd.xml" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <PackageReference Include="Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-dev" />
+    <PackageReference Include="runtime.linux-arm64.Microsoft.DotNet.ILCompiler.LLVM" Version="9.0.0-dev" />
+  </ItemGroup>
+  
+  <ItemGroup>
+    <CustomLinkerArg Include="-Wl,--component-type,ImportsWorld_component_type.wit" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,3 @@
+[submodule "wasi-sockets"]
+	path = wasi-sockets
+	url = https://github.com/dicej/wasi-sockets
