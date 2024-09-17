@@ -177,6 +177,25 @@ interface ip-name-lookup {
   resolve-addresses: func(network: borrow<network>, name: string) -> result<resolve-address-stream, error-code>;
 }
 
+interface tls {
+  use wasi:io/streams@0.2.1.{input-stream, output-stream};
+  use wasi:io/poll@0.2.1.{pollable};
+
+  resource client-connection {
+    constructor(input: input-stream, output: output-stream);
+    connect: func(server-name: string) -> result<client-handshake>;
+  }
+
+  resource client-handshake {
+    finish: static func(this: client-handshake) -> future-streams;
+  }
+
+  resource future-streams {
+    subscribe: func() -> pollable;
+    get: func() -> option<result<result<tuple<input-stream, output-stream>>>>;
+  }
+}
+
 world imports {
   import network;
   import instance-network;
@@ -189,6 +208,7 @@ world imports {
   import tcp;
   import tcp-create-socket;
   import ip-name-lookup;
+  import tls;
 }
 package wasi:io@0.2.1 {
   interface poll {

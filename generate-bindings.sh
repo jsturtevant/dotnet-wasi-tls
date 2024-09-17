@@ -2,7 +2,6 @@
 
 set -ex
 
-# TODO: switch to crates.io release once https://github.com/bytecodealliance/wit-bindgen/pull/1040 is merged and released
-cargo install --locked --no-default-features --features csharp --git https://github.com/dicej/wit-bindgen --rev 694fd927 wit-bindgen-cli --root $(pwd)
-./bin/wit-bindgen c-sharp -w imports -r native-aot wasi-sockets/wit
+cargo install --locked --no-default-features --features csharp wit-bindgen-cli --version 0.32.0 --root $(pwd)
+./bin/wit-bindgen c-sharp --features tls -w imports -r native-aot wasi-sockets/wit
 rm ImportsWorld_wasm_import_linkage_attribute.cs

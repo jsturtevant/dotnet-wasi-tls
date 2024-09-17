@@ -13,7 +13,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace ImportsWorld.wit.imports.wasi.sockets.v0_2_1
 {
-    public static class NetworkInterop {
+    public static class TlsInterop {
 
     }
 }
