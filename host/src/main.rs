@@ -9,7 +9,7 @@ use {
         mem,
         path::PathBuf,
         pin::Pin,
-        task::{Context, Poll},
+        task::{ready, Context, Poll},
     },
     tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
     tokio_native_tls::{native_tls, TlsConnector, TlsStream},
@@ -99,12 +99,10 @@ impl AsyncRead for Streams {
         loop {
             match &mut self.as_mut().input {
                 Promise::None => unreachable!(),
-                Promise::Pending(future) => match future.as_mut().poll(cx) {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(value) => {
-                        self.as_mut().input = Promise::Ready(value);
-                    }
-                },
+                Promise::Pending(future) => {
+                    let value = ready!(future.as_mut().poll(cx));
+                    self.as_mut().input = Promise::Ready(value);
+                }
                 Promise::Ready(input) => {
                     match input.read(buf.remaining()) {
                         Ok(bytes) => {
@@ -143,35 +141,32 @@ impl AsyncWrite for Streams {
         loop {
             match &mut self.as_mut().output {
                 Promise::None => unreachable!(),
-                Promise::Pending(future) => match future.as_mut().poll(cx) {
-                    Poll::Pending => return Poll::Pending,
-                    Poll::Ready(value) => {
-                        self.as_mut().output = Promise::Ready(value);
-                    }
-                },
+                Promise::Pending(future) => {
+                    let value = ready!(future.as_mut().poll(cx));
+                    self.as_mut().output = Promise::Ready(value);
+                }
                 Promise::Ready(output) => {
                     match output.check_write() {
+                        Ok(0) => {
+                            let Promise::Ready(mut output) =
+                                mem::replace(&mut self.as_mut().output, Promise::None)
+                            else {
+                                unreachable!()
+                            };
+                            self.as_mut().output = Promise::Pending(Box::pin(async move {
+                                output.ready().await;
+                                output
+                            }));
+                        }
                         Ok(count) => {
-                            if count == 0 {
-                                let Promise::Ready(mut output) =
-                                    mem::replace(&mut self.as_mut().output, Promise::None)
-                                else {
-                                    unreachable!()
-                                };
-                                self.as_mut().output = Promise::Pending(Box::pin(async move {
-                                    output.ready().await;
-                                    output
-                                }));
-                            } else {
-                                let count = count.min(buf.len());
-                                return match output.write(Bytes::copy_from_slice(&buf[..count])) {
-                                    Ok(()) => Poll::Ready(Ok(count)),
-                                    Err(StreamError::Closed) => Poll::Ready(Ok(0)),
-                                    Err(
-                                        StreamError::LastOperationFailed(e) | StreamError::Trap(e),
-                                    ) => Poll::Ready(Err(std::io::Error::other(e))),
-                                };
-                            }
+                            let count = count.min(buf.len());
+                            return match output.write(Bytes::copy_from_slice(&buf[..count])) {
+                                Ok(()) => Poll::Ready(Ok(count)),
+                                Err(StreamError::Closed) => Poll::Ready(Ok(0)),
+                                Err(StreamError::LastOperationFailed(e) | StreamError::Trap(e)) => {
+                                    Poll::Ready(Err(std::io::Error::other(e)))
+                                }
+                            };
                         }
                         Err(StreamError::Closed) => return Poll::Ready(Ok(0)),
                         Err(StreamError::LastOperationFailed(e) | StreamError::Trap(e)) => {
@@ -199,24 +194,20 @@ pub struct ClientHandshake {
     host: String,
 }
 
-pub enum FutureStreams {
-    Pending(Pin<Box<dyn Future<Output = Result<TlsStream<Streams>, native_tls::Error>> + Send>>),
-    Ready(Result<TlsStream<Streams>, native_tls::Error>),
-    Gone,
-}
+pub struct FutureStreams(Promise<Result<TlsStream<Streams>, native_tls::Error>>);
 
 #[async_trait]
 impl Subscribe for FutureStreams {
     async fn ready(&mut self) {
-        match self {
-            FutureStreams::Pending(_) => (),
-            FutureStreams::Ready(_) | FutureStreams::Gone => return,
+        match &self.0 {
+            Promise::Pending(_) => (),
+            Promise::Ready(_) | Promise::None => return,
         }
 
-        let FutureStreams::Pending(future) = mem::replace(self, FutureStreams::Gone) else {
+        let Promise::Pending(future) = mem::replace(&mut self.0, Promise::None) else {
             unreachable!()
         };
-        *self = FutureStreams::Ready(future.await);
+        self.0 = Promise::Ready(future.await);
     }
 }
 
@@ -360,9 +351,9 @@ impl tls::HostClientHandshake for Ctx {
         let connector = self.connector.clone();
         Ok(self
             .table
-            .push(FutureStreams::Pending(Box::pin(async move {
+            .push(FutureStreams(Promise::Pending(Box::pin(async move {
                 connector.connect(&handshake.host, handshake.streams).await
-            })))?)
+            }))))?)
     }
 
     fn drop(&mut self, this: Resource<ClientHandshake>) -> wasmtime::Result<()> {
@@ -384,16 +375,16 @@ impl tls::HostFutureStreams for Ctx {
     > {
         {
             let this = self.table.get(&this)?;
-            match this {
-                FutureStreams::Pending(_) => return Ok(None),
-                FutureStreams::Ready(Ok(_)) => (),
-                FutureStreams::Ready(Err(_)) => return Ok(Some(Ok(Err(())))),
-                FutureStreams::Gone => return Ok(Some(Err(()))),
+            match &this.0 {
+                Promise::Pending(_) => return Ok(None),
+                Promise::Ready(Ok(_)) => (),
+                Promise::Ready(Err(_)) => return Ok(Some(Ok(Err(())))),
+                Promise::None => return Ok(Some(Err(()))),
             }
         }
 
-        let FutureStreams::Ready(Ok(stream)) =
-            mem::replace(self.table.get_mut(&this)?, FutureStreams::Gone)
+        let Promise::Ready(Ok(stream)) =
+            mem::replace(&mut self.table.get_mut(&this)?.0, Promise::None)
         else {
             unreachable!()
         };
@@ -409,6 +400,7 @@ impl tls::HostFutureStreams for Ctx {
             output: tx,
             buffer: None,
         }) as OutputStream)?;
+
         Ok(Some(Ok(Ok((rx, tx)))))
     }
 
