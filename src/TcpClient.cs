@@ -2,8 +2,8 @@ using System;
 using System.IO;
 using System.Net;
 using System.Net.Sockets;
-using System.Threading.Tasks;
 using System.Threading;
+using System.Threading.Tasks;
 using ImportsWorld;
 using ImportsWorld.wit.imports.wasi.io.v0_2_1;
 using ImportsWorld.wit.imports.wasi.sockets.v0_2_1;
@@ -25,6 +25,7 @@ public class TcpClient : IDisposable
     public async Task ConnectAsync(IPAddress[] addresses, int port)
     {
         using var network = InstanceNetworkInterop.InstanceNetwork();
+        Exception? exception = null;
         foreach (var address in addresses)
         {
             try
@@ -32,12 +33,14 @@ public class TcpClient : IDisposable
                 stream = await Connect(network, IntoIpSocketAddress(new IPEndPoint(address, port)));
                 return;
             }
-            catch
+            catch (Exception e)
             {
+                exception = e;
                 // try the next one
                 continue;
             }
         }
+        throw exception ?? new Exception("no addresses provided");
     }
 
     public async Task ConnectAsync(string host, int port)
