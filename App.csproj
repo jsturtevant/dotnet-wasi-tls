@@ -36,6 +36,6 @@
   </ItemGroup>
   
   <ItemGroup>
-    <CustomLinkerArg Include="-Wl,--component-type,ImportsWorld_component_type.wit" />
+    <CustomLinkerArg Include="-Wl,--component-type,src/ImportsWorld_component_type.wit" />
   </ItemGroup>
 </Project>
