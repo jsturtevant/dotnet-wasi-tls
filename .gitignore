@@ -4,3 +4,5 @@ bin
 obj
 .crates.toml
 .crates2.json
+packages
+target
