@@ -7,7 +7,7 @@ interface](https://github.com/WebAssembly/wasi-sockets/pull/104)
 ## Prequisites
 
 - Rust
-- .NET 8 or later
+- .NET 9 Preview 7 or later
 
 Also, you'll need to download a few pre-release packages and tell NuGet where to
 find them.  Set `platform=linux-arm64`, `platform=linux-x64`,
