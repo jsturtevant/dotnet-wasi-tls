@@ -2,8 +2,9 @@ use {
     anyhow::anyhow,
     async_trait::async_trait,
     bindings::wasi::sockets::tls,
-    bytes::{Bytes, BytesMut},
+    bytes::Bytes,
     clap::Parser,
+    futures::{channel::mpsc, SinkExt, StreamExt},
     std::{
         future::Future,
         mem,
@@ -11,7 +12,7 @@ use {
         pin::Pin,
         task::{ready, Context, Poll},
     },
-    tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, ReadHalf, WriteHalf},
+    tokio::io::{AsyncRead, AsyncWrite, ReadBuf},
     tokio_native_tls::{native_tls, TlsConnector, TlsStream},
     wasmtime::{
         component::{Component, Linker, Resource, ResourceTable},
@@ -25,6 +26,7 @@ use {
             },
             Command,
         },
+        pipe::{AsyncReadStream, AsyncWriteStream},
         HostInputStream, HostOutputStream, StreamError, StreamResult, Subscribe, WasiCtx,
         WasiCtxBuilder, WasiView,
     },
@@ -80,6 +82,7 @@ impl WasiView for Ctx {
         &mut self.wasi
     }
 }
+
 impl WasiHttpView for Ctx {
     fn ctx(&mut self) -> &mut WasiHttpCtx {
         &mut self.http
@@ -108,7 +111,7 @@ impl AsyncRead for Streams {
     ) -> Poll<std::io::Result<()>> {
         loop {
             match &mut self.as_mut().input {
-                Promise::None => unreachable!(),
+                Promise::None => todo!("cancel safety"),
                 Promise::Pending(future) => {
                     let value = ready!(future.as_mut().poll(cx));
                     self.as_mut().input = Promise::Ready(value);
@@ -150,7 +153,7 @@ impl AsyncWrite for Streams {
     ) -> Poll<std::io::Result<usize>> {
         loop {
             match &mut self.as_mut().output {
-                Promise::None => unreachable!(),
+                Promise::None => todo!("cancel safety"),
                 Promise::Pending(future) => {
                     let value = ready!(future.as_mut().poll(cx));
                     self.as_mut().output = Promise::Ready(value);
@@ -204,29 +207,28 @@ pub struct ClientHandshake {
     host: String,
 }
 
-pub struct FutureStreams(Promise<Result<TlsStream<Streams>, native_tls::Error>>);
+pub enum FutureStreams {
+    Pending(mpsc::Receiver<Result<TlsStream<Streams>, native_tls::Error>>),
+    Ready(Option<Result<TlsStream<Streams>, native_tls::Error>>),
+    Gone,
+}
 
 #[async_trait]
 impl Subscribe for FutureStreams {
     async fn ready(&mut self) {
-        match &self.0 {
-            Promise::Pending(_) => (),
-            Promise::Ready(_) | Promise::None => return,
+        if let Self::Pending(receiver) = self {
+            let value = receiver.next().await;
+            *self = Self::Ready(value);
         }
-
-        let Promise::Pending(future) = mem::replace(&mut self.0, Promise::None) else {
-            unreachable!()
-        };
-        self.0 = Promise::Ready(future.await);
     }
 }
 
-struct TlsInputStream {
-    input: ReadHalf<TlsStream<Streams>>,
+struct ReceiverInputStream {
+    input: mpsc::Receiver<Bytes>,
     buffer: Option<StreamResult<Bytes>>,
 }
 
-impl HostInputStream for TlsInputStream {
+impl HostInputStream for ReceiverInputStream {
     fn read(&mut self, size: usize) -> StreamResult<Bytes> {
         let mut bytes = self.buffer.take().unwrap_or_else(|| Ok(Bytes::new()))?;
         if bytes.len() > size {
@@ -237,36 +239,30 @@ impl HostInputStream for TlsInputStream {
 }
 
 #[async_trait]
-impl Subscribe for TlsInputStream {
+impl Subscribe for ReceiverInputStream {
     async fn ready(&mut self) {
         if self.buffer.is_none() {
-            let mut buf = BytesMut::with_capacity(64 * 1024);
-            match self.input.read_buf(&mut buf).await {
-                Ok(0) => {
-                    self.buffer = Some(Err(StreamError::Closed));
-                }
-                Ok(count) => {
-                    buf.truncate(count);
-                    self.buffer = Some(Ok(buf.freeze()))
-                }
-                Err(e) => {
-                    self.buffer = Some(Err(StreamError::LastOperationFailed(anyhow!(e))));
-                }
+            if let Some(bytes) = self.input.next().await {
+                self.buffer = Some(Ok(bytes))
+            } else {
+                self.buffer = Some(Err(StreamError::Closed));
             }
         }
     }
 }
 
-struct TlsOutputStream {
-    output: WriteHalf<TlsStream<Streams>>,
+struct SenderOutputStream {
+    output: mpsc::Sender<Bytes>,
     buffer: Option<StreamResult<Bytes>>,
 }
 
-impl HostOutputStream for TlsOutputStream {
+impl HostOutputStream for SenderOutputStream {
     fn write(&mut self, bytes: Bytes) -> StreamResult<()> {
         match &self.buffer {
             None => {
-                self.buffer = Some(Ok(bytes));
+                if !bytes.is_empty() {
+                    self.buffer = Some(Ok(bytes));
+                }
                 Ok(())
             }
             Some(Ok(_)) => Err(StreamError::LastOperationFailed(anyhow!(
@@ -288,7 +284,7 @@ impl HostOutputStream for TlsOutputStream {
 
     fn check_write(&mut self) -> StreamResult<usize> {
         match &self.buffer {
-            None => Ok(64 * 1024),
+            None => Ok(1024 * 1024),
             Some(Ok(_)) => Ok(0),
             Some(Err(_)) => self.buffer.take().unwrap().map(|_| unreachable!()),
         }
@@ -296,22 +292,18 @@ impl HostOutputStream for TlsOutputStream {
 }
 
 #[async_trait]
-impl Subscribe for TlsOutputStream {
+impl Subscribe for SenderOutputStream {
     async fn ready(&mut self) {
-        while let Some(Ok(bytes)) = &mut self.buffer {
-            match self.output.write(bytes).await {
-                Ok(0) => {
+        if let Some(Ok(_)) = &self.buffer {
+            let Some(Ok(bytes)) = self.buffer.take() else {
+                unreachable!();
+            };
+            match self.output.send(bytes).await {
+                Ok(()) => {
+                    self.buffer = None;
+                }
+                Err(_) => {
                     self.buffer = Some(Err(StreamError::Closed));
-                }
-                Ok(count) => {
-                    _ = bytes.split_to(count);
-
-                    if bytes.is_empty() {
-                        self.buffer = None;
-                    }
-                }
-                Err(e) => {
-                    self.buffer = Some(Err(StreamError::LastOperationFailed(anyhow!(e))));
                 }
             }
         }
@@ -359,14 +351,21 @@ impl tls::HostClientHandshake for Ctx {
     ) -> wasmtime::Result<Resource<FutureStreams>> {
         let handshake = self.table.delete(this)?;
         let connector = self.connector.clone();
-        Ok(self
-            .table
-            .push(FutureStreams(Promise::Pending(Box::pin(async move {
-                connector.connect(&handshake.host, handshake.streams).await.map_err(|e| {
-                    eprintln!("tls error: {}", e);
-                    e
-                })
-            }))))?)
+        let (mut tx, rx) = mpsc::channel(1);
+        tokio::task::spawn(async move {
+            _ = tx
+                .send(
+                    connector
+                        .connect(&handshake.host, handshake.streams)
+                        .await
+                        .map_err(|e| {
+                            eprintln!("tls error: {e}");
+                            e
+                        }),
+                )
+                .await;
+        });
+        Ok(self.table.push(FutureStreams::Pending(rx))?)
     }
 
     fn drop(&mut self, this: Resource<ClientHandshake>) -> wasmtime::Result<()> {
@@ -388,31 +387,31 @@ impl tls::HostFutureStreams for Ctx {
     > {
         {
             let this = self.table.get(&this)?;
-            match &this.0 {
-                Promise::Pending(_) => return Ok(None),
-                Promise::Ready(Ok(_)) => (),
-                Promise::Ready(Err(_)) => return Ok(Some(Ok(Err(())))),
-                Promise::None => return Ok(Some(Err(()))),
+            match this {
+                FutureStreams::Pending(_) => return Ok(None),
+                FutureStreams::Ready(None) | FutureStreams::Ready(Some(Err(_))) => {
+                    return Ok(Some(Ok(Err(()))));
+                }
+                FutureStreams::Ready(Some(Ok(_))) => (),
+                FutureStreams::Gone => return Ok(Some(Err(()))),
             }
         }
 
-        let Promise::Ready(Ok(stream)) =
-            mem::replace(&mut self.table.get_mut(&this)?.0, Promise::None)
+        let FutureStreams::Ready(Some(Ok(stream))) =
+            mem::replace(self.table.get_mut(&this)?, FutureStreams::Gone)
         else {
             unreachable!()
         };
 
         let (rx, tx) = tokio::io::split(stream);
 
-        let rx = self.table.push(InputStream::Host(Box::new(TlsInputStream {
-            input: rx,
-            buffer: None,
-        })))?;
+        let rx = self
+            .table
+            .push(InputStream::Host(Box::new(AsyncReadStream::new(rx))))?;
 
-        let tx = self.table.push(Box::new(TlsOutputStream {
-            output: tx,
-            buffer: None,
-        }) as OutputStream)?;
+        let tx = self
+            .table
+            .push(Box::new(AsyncWriteStream::new(64 * 1024, tx)) as OutputStream)?;
 
         Ok(Some(Ok(Ok((rx, tx)))))
     }
@@ -423,10 +422,30 @@ impl tls::HostFutureStreams for Ctx {
     }
 }
 
-impl tls::Host for Ctx {}
+impl tls::Host for Ctx {
+    fn make_pipe(&mut self) -> wasmtime::Result<(Resource<InputStream>, Resource<OutputStream>)> {
+        let (tx, rx) = mpsc::channel(1);
+
+        let rx = self
+            .table
+            .push(InputStream::Host(Box::new(ReceiverInputStream {
+                input: rx,
+                buffer: None,
+            })))?;
+
+        let tx = self.table.push(Box::new(SenderOutputStream {
+            output: tx,
+            buffer: None,
+        }) as OutputStream)?;
+
+        Ok((rx, tx))
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    pretty_env_logger::init();
+
     let options = Options::parse();
 
     let mut config = Config::new();

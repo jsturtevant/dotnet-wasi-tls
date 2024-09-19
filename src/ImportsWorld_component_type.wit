@@ -194,6 +194,8 @@ interface tls {
     subscribe: func() -> pollable;
     get: func() -> option<result<result<tuple<input-stream, output-stream>>>>;
   }
+
+  make-pipe: func() -> tuple<input-stream, output-stream>;
 }
 
 world imports {

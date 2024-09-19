@@ -11,12 +11,12 @@ internal class SslStream : Stream
     private static string authErrorMessage =
         "This operation is only allowed using a successfully authenticated context.";
 
-    private Stream plainStream;
-    private Stream? cipherStream;
+    private Stream cipherStream;
+    private Stream? plainStream;
 
-    public SslStream(Stream plainStream)
+    public SslStream(Stream cipherStream)
     {
-        this.plainStream = plainStream;
+        this.cipherStream = cipherStream;
     }
 
     public override bool CanRead => true;
@@ -36,29 +36,34 @@ internal class SslStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        plainStream.Dispose();
-        cipherStream?.Dispose();
+        cipherStream.Dispose();
+        plainStream?.Dispose();
     }
 
     public async Task AuthenticateAsClientAsync(string host)
     {
-        IStreams.InputStream plainInput;
-        IStreams.OutputStream plainOutput;
-        if (plainStream is NetworkStream networkStream)
+        IStreams.InputStream cipherInput;
+        IStreams.OutputStream cipherOutput;
+        if (cipherStream is NetworkStream networkStream)
         {
-            plainInput = networkStream.input;
-            plainOutput = networkStream.output;
+            cipherInput = networkStream.input;
+            cipherOutput = networkStream.output;
         }
         else
         {
-            // TODO: we'll need to add a `wasi:io/streams#pipe` function and use
-            // it to support other types of streams
-            throw new NotSupportedException("TODO: non-`NetworkStream` streams not yet supported");
+            var (inputA, outputA) = TlsInterop.MakePipe();
+            var (inputB, outputB) = TlsInterop.MakePipe();
+            cipherInput = inputA;
+            cipherOutput = outputB;
+            var proxy = new NetworkStream(inputB, outputA);
+            _ = proxy.CopyToAsync(cipherStream);
+            _ = cipherStream.CopyToAsync(proxy);
         }
 
         using var future = ITls.ClientHandshake.Finish(
-            new ITls.ClientConnection(plainInput, plainOutput).Connect(host)
+            new ITls.ClientConnection(cipherInput, cipherOutput).Connect(host)
         );
+
         while (true)
         {
             var result = future.Get();
@@ -71,7 +76,7 @@ internal class SslStream : Stream
                 if (inner.IsOk)
                 {
                     var (input, output) = inner.AsOk;
-                    cipherStream = new NetworkStream(input, output);
+                    plainStream = new NetworkStream(input, output);
                     break;
                 }
                 else
@@ -118,9 +123,9 @@ internal class SslStream : Stream
         CancellationToken cancellationToken
     )
     {
-        if (cipherStream is not null)
+        if (plainStream is not null)
         {
-            return cipherStream.ReadAsync(bytes, offset, length, cancellationToken);
+            return plainStream.ReadAsync(bytes, offset, length, cancellationToken);
         }
         else
         {
@@ -133,9 +138,9 @@ internal class SslStream : Stream
         CancellationToken cancellationToken = default
     )
     {
-        if (cipherStream is not null)
+        if (plainStream is not null)
         {
-            return cipherStream.ReadAsync(buffer, cancellationToken);
+            return plainStream.ReadAsync(buffer, cancellationToken);
         }
         else
         {
@@ -150,9 +155,9 @@ internal class SslStream : Stream
         CancellationToken cancellationToken
     )
     {
-        if (cipherStream is not null)
+        if (plainStream is not null)
         {
-            return cipherStream.WriteAsync(bytes, offset, length, cancellationToken);
+            return plainStream.WriteAsync(bytes, offset, length, cancellationToken);
         }
         else
         {
@@ -165,9 +170,9 @@ internal class SslStream : Stream
         CancellationToken cancellationToken = default
     )
     {
-        if (cipherStream is not null)
+        if (plainStream is not null)
         {
-            return cipherStream.WriteAsync(buffer, cancellationToken);
+            return plainStream.WriteAsync(buffer, cancellationToken);
         }
         else
         {

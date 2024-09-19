@@ -116,7 +116,7 @@ public class NetworkStream : Stream
             {
                 var min = Math.Min(this.buffer.Length - this.offset, length);
                 Array.Copy(this.buffer, this.offset, bytes, offset, min);
-                if (min < buffer.Length - this.offset)
+                if (min < this.buffer.Length - this.offset)
                 {
                     this.offset += min;
                 }

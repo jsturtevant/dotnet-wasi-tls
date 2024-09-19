@@ -15,5 +15,29 @@ namespace ImportsWorld.wit.imports.wasi.sockets.v0_2_1
 {
     public static class TlsInterop {
 
+        internal static class MakePipeWasmInterop
+        {
+            [DllImport("wasi:sockets/tls@0.2.1", EntryPoint = "make-pipe"), WasmImportLinkage]
+            internal static extern void wasmImportMakePipe(nint p0);
+
+        }
+
+        public  static unsafe (global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.InputStream, global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.OutputStream) MakePipe()
+        {
+
+            var retArea = new uint[2];
+            fixed (uint* retAreaByte0 = &retArea[0])
+            {
+                var ptr = (nint)retAreaByte0;
+                MakePipeWasmInterop.wasmImportMakePipe(ptr);
+                var resource = new global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.InputStream(new global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.InputStream.THandle(BitConverter.ToInt32(new Span<byte>((void*)(ptr + 0), 4))));
+                var resource0 = new global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.OutputStream(new global::ImportsWorld.wit.imports.wasi.io.v0_2_1.IStreams.OutputStream.THandle(BitConverter.ToInt32(new Span<byte>((void*)(ptr + 4), 4))));
+                return (resource, resource0
+                );
+            }
+
+            //TODO: free alloc handle (interopString) if exists
+        }
+
     }
 }
