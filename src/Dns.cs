@@ -6,41 +6,49 @@ using System.Threading.Tasks;
 using ImportsWorld;
 using ImportsWorld.wit.imports.wasi.sockets.v0_2_1;
 
-public class Dns
+namespace Wasi.Tls
 {
-    public static async Task<IPAddress[]> GetHostAddressesAsync(string name)
+    public class Dns
     {
-        if (IPAddress.TryParse(name, out IPAddress? parsed))
+
+        public static IPAddress[] GetHostAddresses(string hostNameOrAddress)
         {
-            return new IPAddress[] { parsed };
+            return GetHostAddressesAsync(hostNameOrAddress).Result;
         }
-        else
+        
+        public static async Task<IPAddress[]> GetHostAddressesAsync(string name)
         {
-            using var network = InstanceNetworkInterop.InstanceNetwork();
-            using var stream = IpNameLookupInterop.ResolveAddresses(network, name);
-            var list = new List<IPAddress>();
-            while (true)
+            if (IPAddress.TryParse(name, out IPAddress? parsed))
             {
-                try
+                return new IPAddress[] { parsed };
+            }
+            else
+            {
+                using var network = InstanceNetworkInterop.InstanceNetwork();
+                using var stream = IpNameLookupInterop.ResolveAddresses(network, name);
+                var list = new List<IPAddress>();
+                while (true)
                 {
-                    var address = stream.ResolveNextAddress();
-                    if (address is not null)
+                    try
                     {
-                        switch (address.Tag)
+                        var address = stream.ResolveNextAddress();
+                        if (address is not null)
                         {
-                            case INetwork.IpAddress.IPV4:
+                            switch (address.Tag)
                             {
-                                var (ip0, ip1, ip2, ip3) = address.AsIpv4;
-                                list.Add(new IPAddress(new byte[] { ip0, ip1, ip2, ip3 }));
-                                break;
-                            }
-                            case INetwork.IpAddress.IPV6:
-                            {
-                                var (ip0, ip1, ip2, ip3, ip4, ip5, ip6, ip7) = address.AsIpv6;
-                                list.Add(
-                                    new IPAddress(
-                                        new byte[]
-                                        {
+                                case INetwork.IpAddress.IPV4:
+                                    {
+                                        var (ip0, ip1, ip2, ip3) = address.AsIpv4;
+                                        list.Add(new IPAddress(new byte[] { ip0, ip1, ip2, ip3 }));
+                                        break;
+                                    }
+                                case INetwork.IpAddress.IPV6:
+                                    {
+                                        var (ip0, ip1, ip2, ip3, ip4, ip5, ip6, ip7) = address.AsIpv6;
+                                        list.Add(
+                                            new IPAddress(
+                                                new byte[]
+                                                {
                                             (byte)(ip0 >> 8),
                                             (byte)(ip0 & 0xFF),
                                             (byte)(ip1 >> 8),
@@ -57,34 +65,35 @@ public class Dns
                                             (byte)(ip6 & 0xFF),
                                             (byte)(ip7 >> 8),
                                             (byte)(ip7 & 0xFF),
-                                        }
-                                    )
-                                );
-                                break;
+                                                }
+                                            )
+                                        );
+                                        break;
+                                    }
+                                default:
+                                    throw new Exception($"unexpected IpAddress tag: {address.Tag}");
                             }
-                            default:
-                                throw new Exception($"unexpected IpAddress tag: {address.Tag}");
                         }
-                    }
-                    else
-                    {
-                        return list.ToArray();
-                    }
-                }
-                catch (WitException e)
-                {
-                    switch ((INetwork.ErrorCode)e.Value)
-                    {
-                        case INetwork.ErrorCode.WOULD_BLOCK:
+                        else
                         {
-                            await WasiEventLoop.Register(
-                                stream.Subscribe(),
-                                CancellationToken.None
-                            );
-                            break;
+                            return list.ToArray();
                         }
-                        default:
-                            throw;
+                    }
+                    catch (WitException e)
+                    {
+                        switch ((INetwork.ErrorCode)e.Value)
+                        {
+                            case INetwork.ErrorCode.WOULD_BLOCK:
+                                {
+                                    await WasiEventLoop.Register(
+                                        stream.Subscribe(),
+                                        CancellationToken.None
+                                    );
+                                    break;
+                                }
+                            default:
+                                throw;
+                        }
                     }
                 }
             }

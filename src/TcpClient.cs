@@ -8,6 +8,7 @@ using ImportsWorld;
 using ImportsWorld.wit.imports.wasi.io.v0_2_1;
 using ImportsWorld.wit.imports.wasi.sockets.v0_2_1;
 
+namespace Wasi.Tls {
 public class TcpClient : IDisposable
 {
     private NetworkStream? stream;
@@ -20,6 +21,11 @@ public class TcpClient : IDisposable
     protected void Dispose(bool disposing)
     {
         stream?.Dispose();
+    }
+
+    public void Connect(IPAddress[] addresses, int port)
+    {
+        WasiEventLoop.RunAsync(() => ConnectAsync(addresses, port));
     }
 
     public async Task ConnectAsync(IPAddress[] addresses, int port)
@@ -178,4 +184,5 @@ public class TcpClient : IDisposable
             client.Dispose();
         }
     }
+}
 }

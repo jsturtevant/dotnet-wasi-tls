@@ -5,6 +5,9 @@ using System.Threading.Tasks;
 using ImportsWorld;
 using ImportsWorld.wit.imports.wasi.io.v0_2_1;
 
+namespace Wasi.Tls {
+
+
 public class NetworkStream : Stream
 {
     internal IStreams.InputStream input;
@@ -18,6 +21,7 @@ public class NetworkStream : Stream
         this.input = input;
         this.output = output;
     }
+    public bool Connected  => this.closed;
 
     public override bool CanRead => true;
     public override bool CanWrite => true;
@@ -57,12 +61,12 @@ public class NetworkStream : Stream
 
     public override int Read(byte[] buffer, int offset, int length)
     {
-        throw new NotImplementedException();
+        return WasiEventLoop.RunAsync(() => ReadAsync(buffer, offset, length, CancellationToken.None));
     }
 
     public override void Write(byte[] buffer, int offset, int length)
     {
-        throw new NotImplementedException();
+        WasiEventLoop.RunAsync(() => WriteAsync(buffer, offset, length, CancellationToken.None));
     }
 
     public override async Task<int> ReadAsync(
@@ -200,4 +204,5 @@ public class NetworkStream : Stream
         buffer.Span.CopyTo(copy);
         return new ValueTask(WriteAsync(copy, 0, buffer.Length, cancellationToken));
     }
+}
 }

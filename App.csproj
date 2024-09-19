@@ -3,20 +3,24 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net9.0</TargetFramework>
     <LangVersion>preview</LangVersion>
-    <RootNamespace>csharp-wasm</RootNamespace>
+    <RootNamespace>Wasi.Tls</RootNamespace>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <PlatformTarget>AnyCPU</PlatformTarget>
     <UseAppHost>false</UseAppHost>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>wasi-wasm</RuntimeIdentifier>
-    <PublishTrimmed>true</PublishTrimmed>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0'))">
+    <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
   
+  
   <PropertyGroup>
-    <PublishTrimmed>true</PublishTrimmed>
-    <AssemblyName>csharp-wasm</AssemblyName>
+    <AssemblyName>Wasi.Tls</AssemblyName>
   </PropertyGroup>
   
   <PropertyGroup>
