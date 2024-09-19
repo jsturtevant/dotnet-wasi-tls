@@ -11,7 +11,7 @@ use {
         pin::Pin,
         task::{ready, Context, Poll},
     },
-    tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf, ReadHalf, WriteHalf},
     tokio_native_tls::{native_tls, TlsConnector, TlsStream},
     wasmtime::{
         component::{Component, Linker, Resource, ResourceTable},
@@ -212,7 +212,7 @@ impl Subscribe for FutureStreams {
 }
 
 struct TlsInputStream {
-    input: tokio::io::ReadHalf<TlsStream<Streams>>,
+    input: ReadHalf<TlsStream<Streams>>,
     buffer: Option<StreamResult<Bytes>>,
 }
 
@@ -248,7 +248,7 @@ impl Subscribe for TlsInputStream {
 }
 
 struct TlsOutputStream {
-    output: tokio::io::WriteHalf<TlsStream<Streams>>,
+    output: WriteHalf<TlsStream<Streams>>,
     buffer: Option<StreamResult<Bytes>>,
 }
 
