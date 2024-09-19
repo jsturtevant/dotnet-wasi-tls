@@ -28,6 +28,7 @@ use {
         HostInputStream, HostOutputStream, StreamError, StreamResult, Subscribe, WasiCtx,
         WasiCtxBuilder, WasiView,
     },
+    wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView},
 };
 
 mod bindings {
@@ -67,6 +68,7 @@ struct Options {
 struct Ctx {
     table: ResourceTable,
     wasi: WasiCtx,
+    http: WasiHttpCtx,
     connector: TlsConnector,
 }
 
@@ -76,6 +78,14 @@ impl WasiView for Ctx {
     }
     fn ctx(&mut self) -> &mut WasiCtx {
         &mut self.wasi
+    }
+}
+impl WasiHttpView for Ctx {
+    fn ctx(&mut self) -> &mut WasiHttpCtx {
+        &mut self.http
+    }
+    fn table(&mut self) -> &mut ResourceTable {
+        &mut self.table
     }
 }
 
@@ -352,7 +362,10 @@ impl tls::HostClientHandshake for Ctx {
         Ok(self
             .table
             .push(FutureStreams(Promise::Pending(Box::pin(async move {
-                connector.connect(&handshake.host, handshake.streams).await
+                connector.connect(&handshake.host, handshake.streams).await.map_err(|e| {
+                    eprintln!("tls error: {}", e);
+                    e
+                })
             }))))?)
     }
 
@@ -364,7 +377,7 @@ impl tls::HostClientHandshake for Ctx {
 
 impl tls::HostFutureStreams for Ctx {
     fn subscribe(&mut self, this: Resource<FutureStreams>) -> wasmtime::Result<Resource<Pollable>> {
-        wasmtime_wasi::subscribe(self.table(), this)
+        wasmtime_wasi::subscribe(WasiView::table(self), this)
     }
 
     fn get(
@@ -433,6 +446,7 @@ async fn main() -> anyhow::Result<()> {
 
     wasmtime_wasi::add_to_linker_async(&mut linker)?;
     tls::add_to_linker(&mut linker, |ctx| ctx)?;
+    wasmtime_wasi_http::add_only_http_to_linker_sync(&mut linker)?;
 
     let mut wasi = WasiCtxBuilder::new();
     wasi.inherit_stdio()
@@ -450,6 +464,7 @@ async fn main() -> anyhow::Result<()> {
             table: ResourceTable::new(),
             wasi: wasi.build(),
             connector: TlsConnector::from(native_tls::TlsConnector::new()?),
+            http: WasiHttpCtx::new(),
         },
     );
 
