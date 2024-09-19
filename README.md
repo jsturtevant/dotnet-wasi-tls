@@ -31,7 +31,7 @@ cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm
 ## Debugging
 
 ```
-dotnet publish -c Debug
+dotnet publish App.csproj -c Debug
 cargo build --release --manifest-path host/Cargo.toml
 gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish/csharp-wasm.wasm bytecodealliance.org:443
 ```
@@ -46,7 +46,7 @@ thrown), step by instruction, etc.
 dotnet pack library.csproj 
 ```
 
-To use the packaged: 
+To use the package: 
 
 Copy to local dir `cp bin/Release/Wasi.Tls.0.0.1.nupkg $(NUGET_LOCAL_PATH)`
 Then add `<add key="Wasi.Tls" value="%NUGET_LOCAL_PATH%" />` to the `nuget.config` file for the project
