@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFrameworks>net8.0;net9.0</TargetFrameworks>
+    <LangVersion>preview</LangVersion>
+    <RootNamespace>Wasi.Tls</RootNamespace>
+    <PackageId>Wasi.Tls</PackageId>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <SelfContained>false</SelfContained>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+    <ItemGroup>
+      <CustomLinkerArg Include="-Wl,--component-type,src/ImportsWorld_component_type.wit" />
+    </ItemGroup>
+</Project>

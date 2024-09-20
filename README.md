@@ -24,14 +24,14 @@ export NUGET_LOCAL_PATH=$(pwd)/packages
 ## Building and Running
 
 ```
-dotnet publish
+dotnet publish App.csproj
 cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm/publish/csharp-wasm.wasm bytecodealliance.org:443
 ```
 
 ## Debugging
 
 ```
-dotnet publish -c Debug
+dotnet publish App.csproj -c Debug
 cargo build --release --manifest-path host/Cargo.toml
 gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish/csharp-wasm.wasm bytecodealliance.org:443
 ```
@@ -39,3 +39,20 @@ gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish
 Once in `gdb` you can set breakpoints (e.g. `break
 S_P_CoreLib_System_Runtime_EH__RhpThrowEx` to break when an exception is
 thrown), step by instruction, etc.
+
+## generate a package
+
+```
+dotnet pack library.csproj 
+```
+
+To use the package: 
+
+Copy to local dir `cp bin/Release/Wasi.Tls.0.0.1.nupkg $(NUGET_LOCAL_PATH)`
+Then add `<add key="Wasi.Tls" value="%NUGET_LOCAL_PATH%" />` to the `nuget.config` file for the project
+
+Add a package reference to the project:
+
+```
+<PackageReference Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net8.0'))" Include="Wasi.Tls" Version="0.0.1" />
+```
