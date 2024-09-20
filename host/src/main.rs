@@ -140,7 +140,10 @@ impl AsyncRead for Streams {
                                 return Poll::Ready(Ok(()));
                             }
                         }
-                        Err(StreamError::Closed) => return Poll::Ready(Ok(())),
+                        Err(StreamError::Closed) => {
+                            eprintln!("Closing stream");
+                            return Poll::Ready(Ok(()))
+                        },
                         Err(StreamError::LastOperationFailed(e) | StreamError::Trap(e)) => {
                             return Poll::Ready(Err(std::io::Error::other(e)))
                         }
@@ -251,6 +254,7 @@ impl Subscribe for ReceiverInputStream {
             if let Some(bytes) = self.input.next().await {
                 self.buffer = Some(Ok(bytes))
             } else {
+                eprintln!("pipe closed");
                 self.buffer = Some(Err(StreamError::Closed));
             }
         }
