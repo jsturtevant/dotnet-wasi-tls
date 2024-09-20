@@ -25,7 +25,7 @@ export NUGET_LOCAL_PATH=$(pwd)/packages
 
 ```
 dotnet publish App.csproj
-cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm/publish/csharp-wasm.wasm bytecodealliance.org:443
+cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
 ```
 
 ## Debugging
@@ -33,7 +33,7 @@ cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm
 ```
 dotnet publish App.csproj -c Debug
 cargo build --release --manifest-path host/Cargo.toml
-gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish/csharp-wasm.wasm bytecodealliance.org:443
+gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
 ```
 
 Once in `gdb` you can set breakpoints (e.g. `break

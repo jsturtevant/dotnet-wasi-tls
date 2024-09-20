@@ -105,14 +105,17 @@ public class NetworkStream : Stream
                 }
                 catch (WitException e)
                 {
-                    if (((IStreams.StreamError)e.Value).Tag == IStreams.StreamError.CLOSED)
+                    var value = (IStreams.StreamError)e.Value;
+                    if (value.Tag == IStreams.StreamError.CLOSED)
                     {
                         closed = true;
                         return 0;
                     }
                     else
                     {
-                        throw;
+                        throw new Exception(
+                            $"read error: {value.AsLastOperationFailed.ToDebugString()}"
+                        );
                     }
                 }
             }
@@ -156,7 +159,15 @@ public class NetworkStream : Stream
         var flushing = false;
         while (true)
         {
-            var count = (int)output.CheckWrite();
+            int count;
+            try
+            {
+                count = (int)output.CheckWrite();
+            }
+            catch (WitException e)
+            {
+                throw ConvertException(e);
+            }
             if (count == 0)
             {
                 await WasiEventLoop.Register(output.Subscribe(), cancellationToken);
@@ -178,7 +189,14 @@ public class NetworkStream : Stream
                 var min = Math.Min(count, limit - offset);
                 if (offset == 0 && min == bytes.Length)
                 {
-                    output.Write(bytes);
+                    try
+                    {
+                        output.Write(bytes);
+                    }
+                    catch (WitException e)
+                    {
+                        throw ConvertException(e);
+                    }
                 }
                 else
                 {
@@ -191,6 +209,19 @@ public class NetworkStream : Stream
                 }
                 offset += min;
             }
+        }
+    }
+
+    private static Exception ConvertException(WitException e)
+    {
+        var value = (IStreams.StreamError)e.Value;
+        if (value.Tag == IStreams.StreamError.CLOSED)
+        {
+            return new Exception("write error: stream closed unexpectedly");
+        }
+        else
+        {
+            return new Exception($"write error: {value.AsLastOperationFailed.ToDebugString()}");
         }
     }
 

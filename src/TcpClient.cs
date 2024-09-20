@@ -141,7 +141,8 @@ public class TcpClient : IDisposable
                 }
                 catch (WitException e)
                 {
-                    switch ((INetwork.ErrorCode)e.Value)
+                    var value = (INetwork.ErrorCode)e.Value;
+                    switch (value)
                     {
                         case INetwork.ErrorCode.WOULD_BLOCK:
                         {
@@ -152,7 +153,7 @@ public class TcpClient : IDisposable
                             break;
                         }
                         default:
-                            throw;
+                            throw new Exception($"error when connecting to {address}: {value}");
                     }
                 }
             }
