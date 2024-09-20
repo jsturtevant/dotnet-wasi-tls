@@ -134,7 +134,10 @@ impl AsyncRead for Streams {
                                 return Poll::Ready(Ok(()));
                             }
                         }
-                        Err(StreamError::Closed) => return Poll::Ready(Ok(())),
+                        Err(StreamError::Closed) => {
+                            eprintln!("Closing stream");
+                            return Poll::Ready(Ok(()))
+                        },
                         Err(StreamError::LastOperationFailed(e) | StreamError::Trap(e)) => {
                             return Poll::Ready(Err(std::io::Error::other(e)))
                         }
@@ -245,6 +248,7 @@ impl Subscribe for ReceiverInputStream {
             if let Some(bytes) = self.input.next().await {
                 self.buffer = Some(Ok(bytes))
             } else {
+                eprintln!("pipe closed");
                 self.buffer = Some(Err(StreamError::Closed));
             }
         }
@@ -477,12 +481,18 @@ async fn main() -> anyhow::Result<()> {
         wasi.arg(arg);
     }
 
+    let c = native_tls::TlsConnector::builder().build()?;
+        // needed for self signed
+        // do we need a way to pass configuration values to host from client? 
+        // .danger_accept_invalid_hostnames(true)
+        // .danger_accept_invalid_certs(true).build()?;
+
     let mut store = Store::new(
         &engine,
         Ctx {
             table: ResourceTable::new(),
             wasi: wasi.build(),
-            connector: TlsConnector::from(native_tls::TlsConnector::new()?),
+            connector: TlsConnector::from(c),
             http: WasiHttpCtx::new(),
         },
     );
