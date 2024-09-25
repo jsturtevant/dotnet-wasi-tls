@@ -65,6 +65,12 @@ struct Options {
     /// Arguments to pass to the component.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
+
+    // accept invalid hostnames
+    danger_accept_invalid_hostnames: bool,
+
+    // accept invalid certs
+    danger_accept_invalid_certs: bool,
 }
 
 struct Ctx {
@@ -134,10 +140,7 @@ impl AsyncRead for Streams {
                                 return Poll::Ready(Ok(()));
                             }
                         }
-                        Err(StreamError::Closed) => {
-                            eprintln!("Closing stream");
-                            return Poll::Ready(Ok(()))
-                        },
+                        Err(StreamError::Closed) => return Poll::Ready(Ok(())),
                         Err(StreamError::LastOperationFailed(e) | StreamError::Trap(e)) => {
                             return Poll::Ready(Err(std::io::Error::other(e)))
                         }
@@ -248,7 +251,6 @@ impl Subscribe for ReceiverInputStream {
             if let Some(bytes) = self.input.next().await {
                 self.buffer = Some(Ok(bytes))
             } else {
-                eprintln!("pipe closed");
                 self.buffer = Some(Err(StreamError::Closed));
             }
         }
@@ -358,15 +360,7 @@ impl tls::HostClientHandshake for Ctx {
         let (mut tx, rx) = mpsc::channel(1);
         tokio::task::spawn(async move {
             _ = tx
-                .send(
-                    connector
-                        .connect(&handshake.host, handshake.streams)
-                        .await
-                        .map_err(|e| {
-                            eprintln!("tls error: {e}");
-                            e
-                        }),
-                )
+                .send(connector.connect(&handshake.host, handshake.streams).await)
                 .await;
         });
         Ok(self.table.push(FutureStreams::Pending(rx))?)
@@ -481,18 +475,22 @@ async fn main() -> anyhow::Result<()> {
         wasi.arg(arg);
     }
 
-    let c = native_tls::TlsConnector::builder().build()?;
-        // needed for self signed
-        // do we need a way to pass configuration values to host from client? 
-        // .danger_accept_invalid_hostnames(true)
-        // .danger_accept_invalid_certs(true).build()?;
+    let mut conn_builder = native_tls::TlsConnector::builder();
+
+    if options.danger_accept_invalid_hostnames {
+        conn_builder.danger_accept_invalid_hostnames(true);
+    }
+
+    if options.danger_accept_invalid_certs {
+        conn_builder.danger_accept_invalid_certs(true);
+    }
 
     let mut store = Store::new(
         &engine,
         Ctx {
             table: ResourceTable::new(),
             wasi: wasi.build(),
-            connector: TlsConnector::from(c),
+            connector: TlsConnector::from(conn_builder.build()?),
             http: WasiHttpCtx::new(),
         },
     );
