@@ -13,7 +13,7 @@ namespace Wasi.Tls
 
         public static IPAddress[] GetHostAddresses(string hostNameOrAddress)
         {
-            return GetHostAddressesAsync(hostNameOrAddress).Result;
+            return WasiEventLoop.RunAsync(() => GetHostAddressesAsync(hostNameOrAddress));
         }
         
         public static async Task<IPAddress[]> GetHostAddressesAsync(string name)

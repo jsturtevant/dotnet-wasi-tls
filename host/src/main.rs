@@ -65,6 +65,12 @@ struct Options {
     /// Arguments to pass to the component.
     #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
     args: Vec<String>,
+
+    // accept invalid hostnames
+    danger_accept_invalid_hostnames: bool,
+
+    // accept invalid certs
+    danger_accept_invalid_certs: bool,
 }
 
 struct Ctx {
@@ -354,15 +360,7 @@ impl tls::HostClientHandshake for Ctx {
         let (mut tx, rx) = mpsc::channel(1);
         tokio::task::spawn(async move {
             _ = tx
-                .send(
-                    connector
-                        .connect(&handshake.host, handshake.streams)
-                        .await
-                        .map_err(|e| {
-                            eprintln!("tls error: {e}");
-                            e
-                        }),
-                )
+                .send(connector.connect(&handshake.host, handshake.streams).await)
                 .await;
         });
         Ok(self.table.push(FutureStreams::Pending(rx))?)
@@ -477,12 +475,22 @@ async fn main() -> anyhow::Result<()> {
         wasi.arg(arg);
     }
 
+    let mut conn_builder = native_tls::TlsConnector::builder();
+
+    if options.danger_accept_invalid_hostnames {
+        conn_builder.danger_accept_invalid_hostnames(true);
+    }
+
+    if options.danger_accept_invalid_certs {
+        conn_builder.danger_accept_invalid_certs(true);
+    }
+
     let mut store = Store::new(
         &engine,
         Ctx {
             table: ResourceTable::new(),
             wasi: wasi.build(),
-            connector: TlsConnector::from(native_tls::TlsConnector::new()?),
+            connector: TlsConnector::from(conn_builder.build()?),
             http: WasiHttpCtx::new(),
         },
     );
