@@ -57,21 +57,26 @@ namespace Wasi.Tls
             }
             else
             {
+                Console.WriteLine("create pipes...");
                 var (inputA, outputA) = TlsInterop.MakePipe();
                 var (inputB, outputB) = TlsInterop.MakePipe();
                 cipherInput = inputA;
                 cipherOutput = outputB;
                 var proxy = new NetworkStream(inputB, outputA);
+                Console.WriteLine("copy pipes...");
                 _ = proxy.CopyToAsync(cipherStream);
+                Console.WriteLine("copy pipes2...");
                 _ = cipherStream.CopyToAsync(proxy);
             }
 
+            Console.WriteLine("call finish TLS handshake...");
             using var future = ITls.ClientHandshake.Finish(
                 new ITls.ClientConnection(cipherInput, cipherOutput).Connect(host)
             );
 
             while (true)
             {
+                Console.WriteLine("call get future...");
                 var result = future.Get();
                 if (result is not null)
                 {
@@ -81,6 +86,7 @@ namespace Wasi.Tls
                     ).AsOk;
                     if (inner.IsOk)
                     {
+                        Console.WriteLine("create plain stream");
                         var (input, output) = inner.AsOk;
                         plainStream = new NetworkStream(input, output);
                         break;
@@ -92,6 +98,7 @@ namespace Wasi.Tls
                 }
                 else
                 {
+                    Console.WriteLine("Waiting for TLS handshake to complete...");
                     await WasiEventLoop.Register(future.Subscribe(), CancellationToken.None);
                 }
             }
@@ -116,6 +123,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("read ssl {0} bytes", length);
                 return plainStream.Read(buffer, offset, length);
             }
             else
@@ -128,6 +136,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("write ssl {0} bytes", length);
                 plainStream.Write(buffer, offset, length);
             }
             else
@@ -145,6 +154,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("read ssl async {0} bytes", length);
                 return plainStream.ReadAsync(bytes, offset, length, cancellationToken);
             }
             else
@@ -160,6 +170,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("read ssl async value {0} bytes", buffer.Length);
                 return plainStream.ReadAsync(buffer, cancellationToken);
             }
             else
@@ -177,6 +188,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("write ssl async {0} bytes", length);
                 return plainStream.WriteAsync(bytes, offset, length, cancellationToken);
             }
             else
@@ -192,6 +204,7 @@ namespace Wasi.Tls
         {
             if (plainStream is not null)
             {
+                Console.WriteLine("write ssl async value {0} bytes", buffer.Length);
                 return plainStream.WriteAsync(buffer, cancellationToken);
             }
             else

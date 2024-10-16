@@ -93,6 +93,7 @@ public class NetworkStream : Stream
                     var buffer = result;
                     if (buffer.Length == 0)
                     {
+                        Console.WriteLine("networkstream aysnc Registering for read");
                         await WasiEventLoop
                             .Register(input.Subscribe(), cancellationToken)
                             .ConfigureAwait(false);
@@ -122,6 +123,7 @@ public class NetworkStream : Stream
             else
             {
                 var min = Math.Min(this.buffer.Length - this.offset, length);
+                Console.WriteLine("networkstream read async {0} bytes", min);
                 Array.Copy(this.buffer, this.offset, bytes, offset, min);
                 if (min < this.buffer.Length - this.offset)
                 {
@@ -143,6 +145,8 @@ public class NetworkStream : Stream
     {
         // TODO: avoid copy when possible and use ArrayPool when not
         var dst = new byte[buffer.Length];
+        Console.WriteLine("networkstream reading data async");
+        Console.WriteLine("networkstream read {0} bytes value", buffer.Length);
         var result = await ReadAsync(dst, 0, buffer.Length, cancellationToken);
         new ReadOnlySpan<byte>(dst, 0, result).CopyTo(buffer.Span);
         return result;
@@ -170,6 +174,7 @@ public class NetworkStream : Stream
             }
             if (count == 0)
             {
+                Console.WriteLine("networkstream Registering for output");
                 await WasiEventLoop.Register(output.Subscribe(), cancellationToken);
             }
             else if (offset == limit)
@@ -205,6 +210,8 @@ public class NetworkStream : Stream
                     // e.g. `Span`s?
                     var copy = new byte[min];
                     Array.Copy(bytes, offset, copy, 0, min);
+                    Console.WriteLine("networkstream Writing data of length {0}", min);
+                    Console.WriteLine("networkstream Writing data {0}", copy);
                     output.Write(copy);
                 }
                 offset += min;
@@ -230,6 +237,7 @@ public class NetworkStream : Stream
         CancellationToken cancellationToken = default
     )
     {
+        Console.WriteLine("networkstream Write async");
         // TODO: avoid copy when possible and use ArrayPool when not
         var copy = new byte[buffer.Length];
         buffer.Span.CopyTo(copy);

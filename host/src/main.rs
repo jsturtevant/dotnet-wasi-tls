@@ -120,12 +120,14 @@ impl AsyncRead for Streams {
                 Promise::None => todo!("cancel safety"),
                 Promise::Pending(future) => {
                     let value = ready!(future.as_mut().poll(cx));
+                    println!("HOST: pending read ready");
                     self.as_mut().input = Promise::Ready(value);
                 }
                 Promise::Ready(input) => {
                     match input.read(buf.remaining()) {
                         Ok(bytes) => {
                             if bytes.is_empty() {
+                                println!("HOST: read 0 bytes");
                                 let Promise::Ready(mut input) =
                                     mem::replace(&mut self.as_mut().input, Promise::None)
                                 else {
@@ -133,9 +135,11 @@ impl AsyncRead for Streams {
                                 };
                                 self.as_mut().input = Promise::Pending(Box::pin(async move {
                                     input.ready().await;
+                                    println!("HOST: pending input");
                                     input
                                 }));
                             } else {
+                                println!("HOST: read {} bytes", bytes.len());
                                 buf.put_slice(&bytes);
                                 return Poll::Ready(Ok(()));
                             }
@@ -162,11 +166,13 @@ impl AsyncWrite for Streams {
                 Promise::None => todo!("cancel safety"),
                 Promise::Pending(future) => {
                     let value = ready!(future.as_mut().poll(cx));
+                    println!("HOST: pending write ready");
                     self.as_mut().output = Promise::Ready(value);
                 }
                 Promise::Ready(output) => {
                     match output.check_write() {
                         Ok(0) => {
+                            println!("HOST: check zero bytes");
                             let Promise::Ready(mut output) =
                                 mem::replace(&mut self.as_mut().output, Promise::None)
                             else {
@@ -174,11 +180,13 @@ impl AsyncWrite for Streams {
                             };
                             self.as_mut().output = Promise::Pending(Box::pin(async move {
                                 output.ready().await;
+                                println!("HOST: pending write output");
                                 output
                             }));
                         }
                         Ok(count) => {
                             let count = count.min(buf.len());
+                            println!("HOST stream: write {} bytes", count);
                             return match output.write(Bytes::copy_from_slice(&buf[..count])) {
                                 Ok(()) => Poll::Ready(Ok(count)),
                                 Err(StreamError::Closed) => Poll::Ready(Ok(0)),
@@ -238,6 +246,7 @@ impl HostInputStream for ReceiverInputStream {
     fn read(&mut self, size: usize) -> StreamResult<Bytes> {
         let mut bytes = self.buffer.take().unwrap_or_else(|| Ok(Bytes::new()))?;
         if bytes.len() > size {
+            println!("HOST Receiver: read {} bytes", bytes.len());
             self.buffer = Some(Ok(bytes.split_off(size)));
         }
         Ok(bytes)
@@ -249,6 +258,7 @@ impl Subscribe for ReceiverInputStream {
     async fn ready(&mut self) {
         if self.buffer.is_none() {
             if let Some(bytes) = self.input.next().await {
+                println!("HOST receiver: bytes ready {} bytes", bytes.len());
                 self.buffer = Some(Ok(bytes))
             } else {
                 self.buffer = Some(Err(StreamError::Closed));
@@ -267,6 +277,7 @@ impl HostOutputStream for SenderOutputStream {
         match &self.buffer {
             None => {
                 if !bytes.is_empty() {
+                    println!("HOST sender: filling buffer {} bytes", bytes.len());
                     self.buffer = Some(Ok(bytes));
                 }
                 Ok(())
@@ -304,6 +315,7 @@ impl Subscribe for SenderOutputStream {
             let Some(Ok(bytes)) = self.buffer.take() else {
                 unreachable!();
             };
+            println!("HOST sender: sending bytes on ready {}", &bytes.len());
             match self.output.send(bytes).await {
                 Ok(()) => {
                     self.buffer = None;
@@ -338,6 +350,7 @@ impl tls::HostClientConnection for Ctx {
         host: String,
     ) -> wasmtime::Result<Result<Resource<ClientHandshake>, ()>> {
         if let Some(streams) = self.table.get_mut(&this)?.0.take() {
+            println!("HOST: connecting to {}", host);
             Ok(Ok(self.table.push(ClientHandshake { streams, host })?))
         } else {
             Ok(Err(()))
@@ -359,6 +372,7 @@ impl tls::HostClientHandshake for Ctx {
         let connector = self.connector.clone();
         let (mut tx, rx) = mpsc::channel(1);
         tokio::task::spawn(async move {
+            println!("HOST: sending data to {}", &handshake.host);
             _ = tx
                 .send(connector.connect(&handshake.host, handshake.streams).await)
                 .await;
@@ -422,6 +436,7 @@ impl tls::HostFutureStreams for Ctx {
 
 impl tls::Host for Ctx {
     fn make_pipe(&mut self) -> wasmtime::Result<(Resource<InputStream>, Resource<OutputStream>)> {
+        println!("HOST: making pipe");
         let (tx, rx) = mpsc::channel(1);
 
         let rx = self
