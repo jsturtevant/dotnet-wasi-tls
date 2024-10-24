@@ -11,6 +11,7 @@ clap = { version = "4.5.17", features = ["derive"] }
 futures = "0.3.30"
 pretty_env_logger = "0.5.0"
 tokio = { version = "1.40.0", features = ["macros", "rt-multi-thread"] }
+native-tls = {version = "0.2", features = ["alpn"]}
 tokio-native-tls = "0.3.1"
 wasmtime = "24.0.0"
 wasmtime-wasi = "24.0.0"

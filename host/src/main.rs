@@ -1,24 +1,15 @@
 use {
-    anyhow::anyhow,
-    async_trait::async_trait,
-    bindings::wasi::sockets::tls,
-    bytes::Bytes,
-    clap::Parser,
-    futures::{channel::mpsc, SinkExt, StreamExt},
-    std::{
+    crate::bindings::wasi::sockets::tls::HostFutureStreams, anyhow::anyhow, async_trait::async_trait, bindings::wasi::sockets::tls::{self, AlpnId, CipherSuite, PrivateIdentity, ProtocolVersion}, bytes::Bytes, clap::Parser, futures::{channel::mpsc, SinkExt, StreamExt}, ::native_tls::Certificate, std::{
+        any::Any,
         future::Future,
         mem,
         path::PathBuf,
         pin::Pin,
         task::{ready, Context, Poll},
-    },
-    tokio::io::{AsyncRead, AsyncWrite, ReadBuf},
-    tokio_native_tls::{native_tls, TlsConnector, TlsStream},
-    wasmtime::{
+    }, tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, ReadBuf}, tokio_native_tls::{native_tls::{self, TlsStream as nativestream}, TlsConnector, TlsStream}, wasmtime::{
         component::{Component, Linker, Resource, ResourceTable},
         Config, Engine, OptLevel, Store,
-    },
-    wasmtime_wasi::{
+    }, wasmtime_wasi::{
         bindings::{
             io::{
                 poll::Pollable,
@@ -29,8 +20,7 @@ use {
         pipe::{AsyncReadStream, AsyncWriteStream},
         HostInputStream, HostOutputStream, StreamError, StreamResult, Subscribe, WasiCtx,
         WasiCtxBuilder, WasiView,
-    },
-    wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView},
+    }, wasmtime_wasi_http::{WasiHttpCtx, WasiHttpView}
 };
 
 mod bindings {
@@ -43,6 +33,7 @@ mod bindings {
             "wasi:sockets/tls/client-connection": super::ClientConnection,
             "wasi:sockets/tls/client-handshake": super::ClientHandshake,
             "wasi:sockets/tls/future-streams": super::FutureStreams,
+            "wasi:sockets/tls/public-identity": super::PublicIdentity
         },
         trappable_imports: true,
         async: {
@@ -214,25 +205,54 @@ impl AsyncWrite for Streams {
     }
 }
 
-pub struct ClientConnection(Option<Streams>);
+pub struct ClientConnection{
+    streams: Option<Streams>, 
+    connection_info: Option<ConnectionInfo>,
+}
+
+pub struct PublicIdentity{
+    peer_cert: Option<Certificate>
+}
+
+// pub struct PrivateIdentity{}
+// pub struct PublicIdentity{}
+
+// impl HostPrivateIdentity for HostPrivateIdentity {
+//     fn public_identity(&mut self,self_:wasmtime::component::Resource<PrivateIdentity> ,) -> wasmtime::Result<wasmtime::component::Resource<PublicIdentity> > {
+//         todo!()
+//     }
+// }
+
+// impl HostPublicIdentity for PublicIdentity{
+//     fn public_key(&mut self,self_:wasmtime::component::Resource<PublicIdentity> ,) -> wasmtime::Result<Option<wasmtime::component::Resource<Bytes> > >  {
+//         todo!()
+//     }
+// }
 
 pub struct ClientHandshake {
     streams: Streams,
     host: String,
+    client_id: u32,
 }
 
 pub enum FutureStreams {
-    Pending(mpsc::Receiver<Result<TlsStream<Streams>, native_tls::Error>>),
-    Ready(Option<Result<TlsStream<Streams>, native_tls::Error>>),
+    Pending(mpsc::Receiver<Result<TlsStream<Streams>, native_tls::Error>>, u32),
+    Ready(Option<Result<TlsStream<Streams>, native_tls::Error>>, u32),
     Gone,
+}
+
+#[derive(Clone)]
+struct ConnectionInfo {
+    negotiatedAlpn: Option<Vec<u8>>,
+    peer_cert: Option<Certificate>
 }
 
 #[async_trait]
 impl Subscribe for FutureStreams {
     async fn ready(&mut self) {
-        if let Self::Pending(receiver) = self {
+        if let Self::Pending(receiver, client_id) = self {
             let value = receiver.next().await;
-            *self = Self::Ready(value);
+            *self = Self::Ready(value, *client_id);
         }
     }
 }
@@ -338,10 +358,13 @@ impl tls::HostClientConnection for Ctx {
             return Err(anyhow!("file input streams not yet supported"));
         };
         let output = self.table.delete(output)?;
-        Ok(self.table.push(ClientConnection(Some(Streams {
-            input: Promise::Ready(input),
-            output: Promise::Ready(output),
-        })))?)
+        Ok(self.table.push(ClientConnection {
+            streams: Some(Streams {
+                input: Promise::Ready(input),
+                output: Promise::Ready(output),
+            }),
+            connection_info: None,
+        })?)
     }
 
     fn connect(
@@ -349,9 +372,9 @@ impl tls::HostClientConnection for Ctx {
         this: Resource<ClientConnection>,
         host: String,
     ) -> wasmtime::Result<Result<Resource<ClientHandshake>, ()>> {
-        if let Some(streams) = self.table.get_mut(&this)?.0.take() {
+        if let Some(streams) = self.table.get_mut(&this)?.streams.take() {
             println!("HOST: connecting to {}", host);
-            Ok(Ok(self.table.push(ClientHandshake { streams, host })?))
+            Ok(Ok(self.table.push(ClientHandshake { streams, host, client_id: this.rep() })?))
         } else {
             Ok(Err(()))
         }
@@ -360,6 +383,76 @@ impl tls::HostClientConnection for Ctx {
     fn drop(&mut self, this: Resource<ClientConnection>) -> wasmtime::Result<()> {
         self.table.delete(this)?;
         Ok(())
+    }
+    
+    fn server_name(&mut self, this: Resource<ClientConnection> ,) -> wasmtime::Result<Option<String> >  {
+        todo!()
+    }
+    
+    fn alpn_id(&mut self,this:Resource<ClientConnection> ,) -> wasmtime::Result<Option<AlpnId> >  {
+        let conn = self.table.get(&this)?;
+        match &conn.connection_info {
+            Some(conn) =>{
+                println!("negotiated alpn: {:?}", conn.negotiatedAlpn);
+                Ok(conn.negotiatedAlpn.clone())
+            }
+            None => Ok(None)
+        }
+    }
+    
+    fn client_identity(&mut self,this:Resource<ClientConnection> ,) -> wasmtime::Result<Option<Resource<PrivateIdentity> > >  {
+        todo!()
+    }
+    
+    fn server_identity(&mut self,this:Resource<ClientConnection> ,) -> wasmtime::Result<Option<Resource<PublicIdentity> > >  {
+        let conn = self.table.get(&this)?;
+        match &conn.connection_info {
+            Some(conn) =>{
+                println!("conn: {:?}", conn.peer_cert.as_ref().map(|cert| cert.to_der()));
+             Ok(Some(self.table.push(PublicIdentity{
+                    peer_cert: conn.peer_cert.clone()
+                })?))
+            }
+            None => {
+                println!("no conneciton info");
+                Ok(None)
+            }
+        }
+    }
+    
+    fn protocol_version(&mut self,this:Resource<ClientConnection> ,) -> wasmtime::Result<Option<ProtocolVersion> >  {
+        todo!()
+    }
+
+    fn cipher_suite(&mut self,this:Resource<ClientConnection> ,) -> wasmtime::Result<Option<CipherSuite> >  {
+        todo!()
+    }
+}
+
+impl tls::HostPublicIdentity for Ctx {
+    fn export_x509_chain(&mut self, this:Resource<PublicIdentity> ,) -> wasmtime::Result<Vec<Vec<u8> > >  {
+       let id = self.table.get(&this)?;
+       match &id.peer_cert {
+        Some(cert) =>{
+            Ok(vec![cert.to_der()?])
+        }
+        None => Ok(vec![vec![]])
+       }
+    }
+
+    fn drop(&mut self, this:Resource<PublicIdentity>) -> wasmtime::Result<()>  {
+        self.table.delete(this)?;
+        Ok(())
+    }
+}
+
+impl tls::HostPrivateIdentity for Ctx {
+    fn public_identity(&mut self,self_:wasmtime::component::Resource<PrivateIdentity> ,) -> wasmtime::Result<wasmtime::component::Resource<PublicIdentity> >  {
+        todo!()
+    }
+
+    fn drop(&mut self,rep:wasmtime::component::Resource<PrivateIdentity>) -> wasmtime::Result<()>  {
+        todo!()
     }
 }
 
@@ -372,12 +465,12 @@ impl tls::HostClientHandshake for Ctx {
         let connector = self.connector.clone();
         let (mut tx, rx) = mpsc::channel(1);
         tokio::task::spawn(async move {
-            println!("HOST: sending data to {}", &handshake.host);
+            println!("HOST: connecting to {}", &handshake.host);
             _ = tx
                 .send(connector.connect(&handshake.host, handshake.streams).await)
                 .await;
         });
-        Ok(self.table.push(FutureStreams::Pending(rx))?)
+        Ok(self.table.push(FutureStreams::Pending(rx, handshake.client_id))?)
     }
 
     fn drop(&mut self, this: Resource<ClientHandshake>) -> wasmtime::Result<()> {
@@ -400,20 +493,31 @@ impl tls::HostFutureStreams for Ctx {
         {
             let this = self.table.get(&this)?;
             match this {
-                FutureStreams::Pending(_) => return Ok(None),
-                FutureStreams::Ready(None) | FutureStreams::Ready(Some(Err(_))) => {
+                FutureStreams::Pending(_, _) => return Ok(None),
+                FutureStreams::Ready(None, _) | FutureStreams::Ready(Some(Err(_)), _) => {
                     return Ok(Some(Ok(Err(()))));
                 }
-                FutureStreams::Ready(Some(Ok(_))) => (),
+                FutureStreams::Ready(Some(Ok(_)), _) => (),
                 FutureStreams::Gone => return Ok(Some(Err(()))),
             }
         }
 
-        let FutureStreams::Ready(Some(Ok(stream))) =
+        let FutureStreams::Ready(Some(Ok(stream)), client_id) =
             mem::replace(self.table.get_mut(&this)?, FutureStreams::Gone)
         else {
             unreachable!()
         };
+
+        if let Some(conn) = self.table.get_any_mut(client_id)?.downcast_mut::<ClientConnection>() {
+            println!("found connection!");
+            let conn_info = ConnectionInfo {
+                negotiatedAlpn: stream.get_ref().negotiated_alpn()?,
+                peer_cert: stream.get_ref().peer_certificate()?,
+            };
+            println!("conn: {:?}", conn_info.negotiatedAlpn);
+            println!("conn: {:?}", conn_info.peer_cert.as_ref().map(|cert| cert.to_der()));
+            conn.connection_info = Some(conn_info);
+        }
 
         let (rx, tx) = tokio::io::split(stream);
 

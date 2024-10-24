@@ -946,6 +946,7 @@ dependencies = [
  "bytes",
  "clap",
  "futures",
+ "native-tls",
  "pretty_env_logger",
  "tokio",
  "tokio-native-tls",
