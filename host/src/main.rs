@@ -43,6 +43,7 @@ mod bindings {
 }
 
 #[derive(Parser)]
+#[clap(version)]
 struct Options {
     /// Component to run.
     ///
@@ -583,7 +584,7 @@ async fn main() -> anyhow::Result<()> {
     pretty_env_logger::init();
 
     let options = Options::parse();
-
+    
     let mut config = Config::new();
     config.wasm_component_model(true);
     config.async_support(true);
