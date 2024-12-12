@@ -231,7 +231,7 @@ pub struct ClientConnection{
 }
 
 pub struct PublicIdentity{
-    peer_cert: Option<Certificate>
+    peer_cert: Option<Vec<Certificate>>
 }
 
 // pub struct PrivateIdentity{}
@@ -264,7 +264,7 @@ pub enum FutureStreams {
 #[derive(Clone)]
 struct ConnectionInfo {
     negotiatedAlpn: Option<Vec<u8>>,
-    peer_cert: Option<Certificate>
+    peer_cert: Option<Vec<Certificate>>
 }
 
 #[async_trait]
@@ -454,7 +454,7 @@ impl tls::HostPublicIdentity for Ctx {
        let id = self.table.get(&this)?;
        match &id.peer_cert {
         Some(cert) =>{
-            Ok(vec![cert.to_der()?])
+            Ok(cert.iter().map(|c| c.to_der()).collect::<Result<Vec<_>, _>>()?)
         }
         None => Ok(vec![vec![]])
        }
@@ -532,7 +532,7 @@ impl tls::HostFutureStreams for Ctx {
             
             let conn_info = ConnectionInfo {
                 negotiatedAlpn: stream.get_ref().negotiated_alpn()?,
-                peer_cert: stream.get_ref().peer_certificate()?,
+                peer_cert: stream.get_ref().peer_certificate_chain()?,
             };
             
             
