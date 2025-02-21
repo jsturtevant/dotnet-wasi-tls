@@ -1,27 +1,24 @@
 using System;
 using System.IO;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Wasi.Tls;
+using System.Runtime.CompilerServices;
 
 public class App
 {
-    public static int Main(string[] args)
+     public static int Main(string[] args)
     {
-        var task = MainAsync(args[0]);
-        while (!task.IsCompleted)
-        {
-            WasiEventLoop.Dispatch();
-        }
-        var exception = task.Exception;
-        if (exception is not null)
-        {
-            throw exception;
-        }
-        return 0;
+        return PollWasiEventLoopUntilResolved((Thread)null!, MainAsync(args[0]));
+
+        [UnsafeAccessor(UnsafeAccessorKind.StaticMethod, Name = "PollWasiEventLoopUntilResolved")]
+        static extern T PollWasiEventLoopUntilResolved<T>(Thread t, Task<T> mainTask);
     }
 
-    private static async Task MainAsync(string addressString)
+
+
+    private static async Task<int> MainAsync(string addressString)
     {
         var colonIndex = addressString.LastIndexOf(':');
         if (colonIndex > 0)
@@ -29,7 +26,7 @@ public class App
             var host = addressString.Substring(0, colonIndex);
             if (ushort.TryParse(addressString.Substring(colonIndex + 1), out ushort port))
             {
-                using var client = new TcpClient();
+                using var client = new Wasi.Tls.TcpClient();
                 await client.ConnectAsync(host, port);
                 using var tcpStream = client.GetStream();
                 using var sslStream = new SslStream(tcpStream);
@@ -42,7 +39,7 @@ public class App
                 var response = new MemoryStream();
                 await sslStream.CopyToAsync(response);
                 Console.WriteLine(Encoding.UTF8.GetString(response.GetBuffer()));
-                return;
+                return 0;
             }
         }
         throw new Exception($"unable to parse \"{addressString}\" as <host>:<port> pair");

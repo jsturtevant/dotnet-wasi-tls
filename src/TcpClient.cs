@@ -158,8 +158,9 @@ public class TcpClient : IDisposable
                 }
             }
         }
-        catch
+        catch(Exception e)
         {
+            Console.WriteLine(e.Message);
             client.Dispose();
             throw;
         }
