@@ -106,7 +106,7 @@ public class NetworkStream : Stream
                 catch (WitException e)
                 {
                     var value = (IStreams.StreamError)e.Value;
-                    if (value.Tag == IStreams.StreamError.CLOSED)
+                    if (value.Tag == IStreams.StreamError.Tags.Closed)
                     {
                         closed = true;
                         return 0;
@@ -215,7 +215,7 @@ public class NetworkStream : Stream
     private static Exception ConvertException(WitException e)
     {
         var value = (IStreams.StreamError)e.Value;
-        if (value.Tag == IStreams.StreamError.CLOSED)
+        if (value.Tag == IStreams.StreamError.Tags.Closed)
         {
             return new Exception("write error: stream closed unexpectedly");
         }

@@ -73,7 +73,7 @@ public class TcpClient : IDisposable
             case AddressFamily.InterNetwork:
             {
                 var ip = endpoint.Address.GetAddressBytes();
-                return INetwork.IpSocketAddress.ipv4(
+                return INetwork.IpSocketAddress.Ipv4(
                     new INetwork.Ipv4SocketAddress(
                         (ushort)endpoint.Port,
                         (ip[0], ip[1], ip[2], ip[3])
@@ -83,7 +83,7 @@ public class TcpClient : IDisposable
             case AddressFamily.InterNetworkV6:
             {
                 var ip = endpoint.Address.GetAddressBytes();
-                return INetwork.IpSocketAddress.ipv6(
+                return INetwork.IpSocketAddress.Ipv6(
                     new INetwork.Ipv6SocketAddress(
                         (ushort)endpoint.Port,
                         0,
@@ -114,12 +114,12 @@ public class TcpClient : IDisposable
         INetwork.IpAddressFamily family;
         switch (address.Tag)
         {
-            case INetwork.IpSocketAddress.IPV4:
+            case INetwork.IpSocketAddress.Tags.Ipv4:
             {
                 family = INetwork.IpAddressFamily.IPV4;
                 break;
             }
-            case INetwork.IpSocketAddress.IPV6:
+            case INetwork.IpSocketAddress.Tags.Ipv6:
             {
                 family = INetwork.IpAddressFamily.IPV6;
                 break;
