@@ -4,7 +4,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using ImportsWorld;
 using ImportsWorld.wit.imports.wasi.io.v0_2_1;
-using ImportsWorld.wit.imports.wasi.sockets.v0_2_1;
+using ImportsWorld.wit.imports.wasi.tls.v0_2_1;
 
 namespace Wasi.Tls
 {
@@ -54,34 +54,25 @@ namespace Wasi.Tls
             {
                 cipherInput = networkStream.input;
                 cipherOutput = networkStream.output;
-            }
-            else
-            {
-                var (inputA, outputA) = TlsInterop.MakePipe();
-                var (inputB, outputB) = TlsInterop.MakePipe();
-                cipherInput = inputA;
-                cipherOutput = outputB;
-                var proxy = new NetworkStream(inputB, outputA);
-                _ = proxy.CopyToAsync(cipherStream);
-                _ = cipherStream.CopyToAsync(proxy);
+            }else {
+                throw new NotImplementedException();
             }
 
-            using var future = ITls.ClientHandshake.Finish(
-                new ITls.ClientConnection(cipherInput, cipherOutput).Connect(host)
-            );
+            var handshake = new ITypes.ClientHandshake(host, cipherInput, cipherOutput);
 
+            using var future = ITypes.ClientHandshake.Finish(handshake);
             while (true)
             {
                 var result = future.Get();
                 if (result is not null)
                 {
                     var inner = (
-                        (Result<Result<(IStreams.InputStream, IStreams.OutputStream), None>, None>)
+                        (Result<Result<(ITypes.ClientConnection, IStreams.InputStream, IStreams.OutputStream), None>, None>)
                             result!
                     ).AsOk;
                     if (inner.IsOk)
                     {
-                        var (input, output) = inner.AsOk;
+                        var (client, input, output) = inner.AsOk;
                         plainStream = new NetworkStream(input, output);
                         break;
                     }

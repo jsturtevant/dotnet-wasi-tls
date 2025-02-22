@@ -1,3 +1,8 @@
 [submodule "wasi-sockets"]
 	path = wasi-sockets
-	url = https://github.com/dicej/wasi-sockets
+	url = https://github.com/bytecodealliance/wasi-sockets
+
+[submodule "wasi-tls"]
+	path = wasi-tls
+	url = https://github.com/WebAssembly/wasi-tls
+	branch = add-close-notify-function

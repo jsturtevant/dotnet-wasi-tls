@@ -177,27 +177,6 @@ interface ip-name-lookup {
   resolve-addresses: func(network: borrow<network>, name: string) -> result<resolve-address-stream, error-code>;
 }
 
-interface tls {
-  use wasi:io/streams@0.2.1.{input-stream, output-stream};
-  use wasi:io/poll@0.2.1.{pollable};
-
-  resource client-connection {
-    constructor(input: input-stream, output: output-stream);
-    connect: func(server-name: string) -> result<client-handshake>;
-  }
-
-  resource client-handshake {
-    finish: static func(this: client-handshake) -> future-streams;
-  }
-
-  resource future-streams {
-    subscribe: func() -> pollable;
-    get: func() -> option<result<result<tuple<input-stream, output-stream>>>>;
-  }
-
-  make-pipe: func() -> tuple<input-stream, output-stream>;
-}
-
 world imports {
   import network;
   import instance-network;
@@ -210,7 +189,7 @@ world imports {
   import tcp;
   import tcp-create-socket;
   import ip-name-lookup;
-  import tls;
+  import wasi:tls/types@0.2.1;
 }
 package wasi:io@0.2.1 {
   interface poll {
@@ -276,3 +255,25 @@ package wasi:clocks@0.2.1 {
     subscribe-duration: func(when: duration) -> pollable;
   }
 }
+package wasi:tls@0.2.1 {
+  interface types {
+    use wasi:io/streams@0.2.1.{input-stream, output-stream};
+    use wasi:io/poll@0.2.1.{pollable};
+    use wasi:io/error@0.2.1.{error as io-error};
+
+    resource client-handshake {
+      constructor(server-name: string, input: input-stream, output: output-stream);
+      finish: static func(this: client-handshake) -> future-client-streams;
+    }
+
+    resource client-connection {
+      close-notify: func() -> option<result<_, io-error>>;
+    }
+
+    resource future-client-streams {
+      subscribe: func() -> pollable;
+      get: func() -> option<result<result<tuple<client-connection, input-stream, output-stream>>>>;
+    }
+  }
+}
+

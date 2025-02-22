@@ -1,31 +1,18 @@
 # .NET `SslStream` on WASI experiment
 
 This demonstrates the feasibility of implementing a subset of .NET's
-`System.Net.Security.SslStream` based on [a proposed `wasi:sockets/tls`
-interface](https://github.com/WebAssembly/wasi-sockets/pull/104)
+`System.Net.Security.SslStream` based on [a proposed `wasi:tls`](https://github.com/WebAssembly/wasi-tls)
 
 ## Prequisites
 
-- Rust
-- .NET 9 Preview 7 or later
-
-Also, you'll need to download a few pre-release packages and tell NuGet where to
-find them.  Set `platform=linux-arm64`, `platform=linux-x64`,
-`platform=win-x64`, or `platform=osx-arm64` and run:
-
-```
-mkdir packages
-curl -LO --output-dir packages https://github.com/dicej/spin-dotnet-sdk/releases/download/canary/Microsoft.DotNet.ILCompiler.LLVM.9.0.0-dev.nupkg
-curl -LO --output-dir packages https://github.com/dicej/spin-dotnet-sdk/releases/download/canary/runtime.wasi-wasm.Microsoft.DotNet.ILCompiler.LLVM.9.0.0-dev.nupkg
-curl -LO --output-dir packages https://github.com/dicej/spin-dotnet-sdk/releases/download/canary/runtime.$platform.Microsoft.DotNet.ILCompiler.LLVM.9.0.0-dev.nupkg
-export NUGET_LOCAL_PATH=$(pwd)/packages
-```
+- .NET 9 
+- wasmtime built on https://github.com/bytecodealliance/wasmtime/pull/10249 or `curl -LO https://github.com/jsturtevant/wasmtime/releases/download/wasi-tls-demo/wasmtime`
 
 ## Building and Running
 
 ```
 dotnet publish App.csproj
-cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
+wasmtime -S inherit-network -S cli -S tcp -S allow-ip-name-lookup -S tls bin/Release/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
 ```
 
 ## Debugging
@@ -33,7 +20,7 @@ cargo run --release --manifest-path host/Cargo.toml bin/Release/net9.0/wasi-wasm
 ```
 dotnet publish App.csproj -c Debug
 cargo build --release --manifest-path host/Cargo.toml
-gdb --args ./host/target/release/host --debug bin/Debug/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
+gdb --args wasmtime -S inherit-network -S cli -S tcp -S allow-ip-name-lookup -S tls --debug bin/Debug/net9.0/wasi-wasm/publish/Wasi.Tls.wasm bytecodealliance.org:443
 ```
 
 Once in `gdb` you can set breakpoints (e.g. `break
